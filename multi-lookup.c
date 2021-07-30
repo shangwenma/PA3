@@ -11,11 +11,11 @@
 
 
 void write_file(char *fileName, char value[255], pthread_mutex_t mutex){
-
-    pthread_mutex_lock(&mutex); 
     
+    // pthread_mutex_lock(&mutex); 
+    pthread_mutex_trylock(&mutex);
     FILE *file; // create file object
-    file = fopen(fileName,"a");// open file 
+    file = fopen(fileName,"a");// open ` 
     fputs(value,(FILE*) file); //wirte to value
 
     fclose(file); //close the file
@@ -24,7 +24,7 @@ void write_file(char *fileName, char value[255], pthread_mutex_t mutex){
 }
 
 char *safe_removeData(pthread_mutex_t mutex){
-    pthread_mutex_lock(&mutex);
+    pthread_mutex_trylock(&mutex);
     char * ret = removeData(); 
     pthread_mutex_unlock(&mutex);
     return ret;
@@ -40,7 +40,6 @@ void _resolver(sem_t *semaphore, char* result,pthread_mutex_t mutex){
     if(dnslookup((char *)buffer,ip, 255) == UTIL_FAILURE){ // use hostname in buffer find its ip and save to ip
         strcpy(ip,""); //hanld exception when it is not able to find its ip from hostname
     }
-    // printf("%s,%s \n", buffer,ip);
     sprintf(buffer, "%s%s%s%s",buffer, ",", ip,"\n"); //comebine
 
     write_file(result,buffer,mutex); //write to result
@@ -48,7 +47,7 @@ void _resolver(sem_t *semaphore, char* result,pthread_mutex_t mutex){
 }
 
 void safe_insert(char * value,pthread_mutex_t mutex){
-    pthread_mutex_lock(&mutex);
+    pthread_mutex_trylock(&mutex);
     insert(value);
     pthread_mutex_unlock(&mutex);
 }
@@ -65,7 +64,6 @@ int read_file(char *fileName, sem_t *semaphore, char* result,pthread_mutex_t mut
         if (returnFile){
             
             sem_wait(semaphore);// semaphore -1
-            //printf("buffer: %s\n",buffer);
             strtok(buffer, "\n"); // drop the line changed
             safe_insert(buffer, mutex); // write buffer to shared arrary
 
@@ -80,22 +78,15 @@ int read_file(char *fileName, sem_t *semaphore, char* result,pthread_mutex_t mut
 void *_requester(void *p){
     parameter *pointer = (parameter *)p ; //transform type
     
-    for (int i = 0; i < 5; i++){
-
+    for (int i = 0; i < 6; i++){
         char filename[255];
         strcpy(filename, (char *)(p + 255*i)); //every block in arrary is 255
-        printf("filename:%s\n", filename);
         char info[255];
         // Thread <thread id> serviced ### files
-        sprintf(info, "%s%ld%s%s%s%s","Thread ", pthread_self(), " serviced ",filename, "files","\n"); // combine log information save to info
-
+        sprintf(info, "%s%ld%s%s%s%s","Thread ", pthread_self(), " serviced ",filename, " files","\n"); // combine log information save to info
         write_file(pointer->service, info, pointer->mutex);// filename, context, lock when 1 thread is writing
-        //printf("1\n");
-        read_file(filename, pointer->semaphmore, pointer->result, pointer->mutex);
-        //printf("2\n");
-            
+        read_file(filename, pointer->semaphmore, pointer->result, pointer->mutex);      
     }
-
     return 0;
 }
 
@@ -131,7 +122,7 @@ int main(int argc, char* argv[]){
     DIR * route = opendir(input_filename); // Return an object // Open a directory steam on name 
     struct dirent *read; // file object saved in struct
 
-    char filenames[resolver][5][255]; // where does it save to
+    char filenames[resolver][6][255]; // where does it save to
 
 
     pthread_t requester_thread[requester];// create thread array
@@ -145,41 +136,32 @@ int main(int argc, char* argv[]){
             continue;
         }
         else{
-            //input_filename = read->d_name;
             char *name = (char *) malloc(strlen("input/") + strlen(read->d_name)); //put the directory and filename together //strlen- length of string //malloc- memory allocated
             strcpy(name, "input/"); //strcpy - string copy
             strcat(name, read->d_name); // strcat - string concatnate
-            printf("name:%s\n", name);
             strcpy(filenames[count%requester][count / requester], name); //filename copy to the correct destnation of filenames arrary
             free(name);
-            count++;
-            
-            
+            count++;            
         }
     }
     parameter *requester_p = calloc(requester,sizeof(parameter));//dynamic allocate space for passing parameter to thread
     for (int i = 0; i<requester; i++){ // start to create thread
-        for(int j = 0; j< 5; j++){
-            strcpy((requester_p->fileName)[j],filenames[i][j]); //copy filenames 
-                
+        for(int j = 0; j< 6; j++){
+            strcpy((requester_p[i].fileName)[j],filenames[i][j]); //copy filenames 
         }
         
         strcpy(requester_p[i].service,requester_log); // assign each paramether
-        
-        requester_p->semaphmore = &semaphore;
-      
+        requester_p[i].semaphmore = &semaphore;
         strcpy(requester_p[i].result,resolver_log);
-        requester_p->mutex = mutex;
+        requester_p[i].mutex = mutex;
 
-        pthread_create(&requester_thread[i],NULL,_requester,(void *)(requester_p)); // passing the parameter to each thread
-
+        pthread_create(&requester_thread[i],NULL,_requester,&requester_p[i]); // passing the parameter to each thread
     }
     
     for(int i = 0; i < requester; i++){
-
         pthread_join(requester_thread[i], NULL); //prevent main thread to stop before all child end
-
     }
+
     free(requester_p);
     gettimeofday(&end,NULL);
     time_use =(end.tv_sec-start.tv_sec);
